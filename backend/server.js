@@ -1,6 +1,7 @@
 const express = require('express');
 const mysql = require('mysql2');
 const cors = require('cors');
+const bcrypt = require('bcryptjs'); // Install: npm install bcryptjs
 
 const app = express();
 app.use(cors());
@@ -23,31 +24,9 @@ db.connect((err) => {
     }
 });
 
-// Create tables if they don't exist
-db.query(`
-    CREATE TABLE IF NOT EXISTS projects (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        title VARCHAR(255) NOT NULL,
-        description TEXT,
-        tech VARCHAR(255),
-        image VARCHAR(500),
-        github VARCHAR(500),
-        live VARCHAR(500),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-`);
-
-db.query(`
-    CREATE TABLE IF NOT EXISTS messages (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        email VARCHAR(255) NOT NULL,
-        message TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-`);
-
 // ============= PUBLIC API ROUTES =============
+
+// GET all projects
 app.get('/api/projects', (req, res) => {
     db.query("SELECT * FROM projects ORDER BY id DESC", (err, results) => {
         if(err) {
@@ -58,6 +37,22 @@ app.get('/api/projects', (req, res) => {
     });
 });
 
+// GET admin settings (public profile info)
+app.get('/api/settings', (req, res) => {
+    db.query("SELECT profile_name, profile_title, profile_image FROM admin_settings WHERE id = 1", (err, results) => {
+        if(err) {
+            console.error('Error fetching settings:', err);
+            return res.status(500).json({ error: err.message });
+        }
+        if(results.length > 0) {
+            res.json(results[0]);
+        } else {
+            res.json({ profile_name: 'Dagim Belayneh', profile_title: 'Computer Science Student | Full-Stack Developer', profile_image: '/profile.jpg' });
+        }
+    });
+});
+
+// POST contact message
 app.post('/api/contact', (req, res) => {
     const { name, email, message } = req.body;
     
@@ -78,65 +73,113 @@ app.post('/api/contact', (req, res) => {
     );
 });
 
-// ============= ADMIN ROUTES =============
-const ADMIN_USERNAME = 'dagi';
-const ADMIN_PASSWORD = 'Dagi123';
+// ============= ADMIN API ROUTES =============
 
+// Admin login
 app.post('/api/admin/login', (req, res) => {
     const { username, password } = req.body;
     
-    if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
-        res.json({ success: true });
-    } else {
-        res.status(401).json({ success: false, error: "Invalid credentials" });
+    db.query("SELECT * FROM admin_settings WHERE username = ?", [username], (err, results) => {
+        if(err) {
+            console.error('Login error:', err);
+            return res.status(500).json({ success: false, error: err.message });
+        }
+        
+        if(results.length > 0 && results[0].password === password) {
+            // Don't send password back
+            const { password, ...adminData } = results[0];
+            res.json({ success: true, admin: adminData });
+        } else {
+            res.status(401).json({ success: false, error: "Invalid credentials" });
+        }
+    });
+});
+
+// UPDATE admin settings (change username, password, profile)
+app.put('/api/admin/settings', (req, res) => {
+    const { username, password, profile_name, profile_title, profile_image } = req.body;
+    
+    let query = "UPDATE admin_settings SET ";
+    const params = [];
+    
+    if (username) {
+        query += "username = ?, ";
+        params.push(username);
     }
+    if (password) {
+        query += "password = ?, ";
+        params.push(password);
+    }
+    if (profile_name) {
+        query += "profile_name = ?, ";
+        params.push(profile_name);
+    }
+    if (profile_title) {
+        query += "profile_title = ?, ";
+        params.push(profile_title);
+    }
+    if (profile_image) {
+        query += "profile_image = ?, ";
+        params.push(profile_image);
+    }
+    
+    // Remove trailing comma and space
+    query = query.slice(0, -2) + " WHERE id = 1";
+    
+    db.query(query, params, (err, result) => {
+        if(err) {
+            console.error('Error updating settings:', err);
+            return res.status(500).json({ error: err.message });
+        }
+        
+        // Get updated settings
+        db.query("SELECT id, username, profile_name, profile_title, profile_image FROM admin_settings WHERE id = 1", (err, results) => {
+            if(err) return res.status(500).json({ error: err.message });
+            res.json({ success: true, settings: results[0] });
+        });
+    });
+});
+
+// GET all messages (admin only)
+app.get('/api/admin/messages', (req, res) => {
+    db.query("SELECT * FROM messages ORDER BY id DESC", (err, results) => {
+        if(err) {
+            console.error('Error fetching messages:', err);
+            return res.status(500).json({ error: err.message });
+        }
+        res.json(results);
+    });
 });
 
 // CREATE project
 app.post('/api/admin/projects', (req, res) => {
-    const { title, description, tech, image, github, live } = req.body;
-    
-    console.log('📝 CREATE PROJECT REQUEST:', req.body);
+    const { title, description, technologies, image, github, live } = req.body;
     
     if (!title || !description) {
         return res.status(400).json({ error: "Title and description are required" });
     }
     
-    const sql = "INSERT INTO projects (title, description, tech, image, github, live) VALUES (?, ?, ?, ?, ?, ?)";
-    db.query(sql, [title, description, tech || '', image || '', github || '', live || ''], (err, result) => {
+    const sql = "INSERT INTO projects (title, description, technologies, image, github, live) VALUES (?, ?, ?, ?, ?, ?)";
+    db.query(sql, [title, description, technologies || '', image || '', github || '', live || ''], (err, result) => {
         if(err) {
             console.error('Error creating project:', err);
             return res.status(500).json({ error: err.message });
         }
         
-        console.log('✅ Project created with ID:', result.insertId);
-        
-        // Return the created project with ID
-        const selectSql = "SELECT * FROM projects WHERE id = ?";
-        db.query(selectSql, [result.insertId], (err, rows) => {
-            if(err) {
-                console.error('Error fetching created project:', err);
-                return res.status(500).json({ error: err.message });
-            }
+        // Return the created project
+        db.query("SELECT * FROM projects WHERE id = ?", [result.insertId], (err, rows) => {
+            if(err) return res.status(500).json({ error: err.message });
             res.status(201).json(rows[0]);
         });
     });
 });
 
-// UPDATE project - COMPLETELY FIXED
+// UPDATE project - FIXED
 app.put('/api/admin/projects/:id', (req, res) => {
-    const { title, description, tech, image, github, live } = req.body;
+    const { title, description, technologies, image, github, live } = req.body;
     const { id } = req.params;
     
-    console.log('🔄 UPDATE PROJECT REQUEST');
-    console.log('ID from params:', id);
-    console.log('Request body:', req.body);
-    
-    // Validate ID
-    if (!id || id === 'undefined' || id === 'null') {
-        console.log('❌ Invalid ID provided:', id);
-        return res.status(400).json({ error: "Invalid project ID" });
-    }
+    console.log('Updating project ID:', id);
     
     if (!title || !description) {
         return res.status(400).json({ error: "Title and description are required" });
@@ -150,29 +193,20 @@ app.put('/api/admin/projects/:id', (req, res) => {
         }
         
         if (results.length === 0) {
-            console.log('❌ Project not found with ID:', id);
             return res.status(404).json({ error: "Project not found" });
         }
         
-        console.log('✅ Project found:', results[0]);
-        
-        // Project exists, proceed with update
-        const sql = "UPDATE projects SET title = ?, description = ?, tech = ?, image = ?, github = ?, live = ? WHERE id = ?";
-        db.query(sql, [title, description, tech || '', image || '', github || '', live || '', id], (err, result) => {
+        // Update project
+        const sql = "UPDATE projects SET title = ?, description = ?, technologies = ?, image = ?, github = ?, live = ? WHERE id = ?";
+        db.query(sql, [title, description, technologies || '', image || '', github || '', live || '', id], (err, result) => {
             if(err) {
                 console.error('Error updating project:', err);
                 return res.status(500).json({ error: err.message });
             }
             
-            console.log('✅ Update successful, affected rows:', result.affectedRows);
-            
             // Return updated project
             db.query("SELECT * FROM projects WHERE id = ?", [id], (err, rows) => {
-                if(err) {
-                    console.error('Error fetching updated project:', err);
-                    return res.status(500).json({ error: err.message });
-                }
-                console.log('✅ Returning updated project:', rows[0]);
+                if(err) return res.status(500).json({ error: err.message });
                 res.json(rows[0]);
             });
         });
@@ -183,8 +217,6 @@ app.put('/api/admin/projects/:id', (req, res) => {
 app.delete('/api/admin/projects/:id', (req, res) => {
     const { id } = req.params;
     
-    console.log('🗑️ DELETE PROJECT REQUEST for ID:', id);
-    
     db.query("DELETE FROM projects WHERE id = ?", [id], (err, result) => {
         if(err) {
             console.error('Error deleting project:', err);
@@ -193,24 +225,12 @@ app.delete('/api/admin/projects/:id', (req, res) => {
         if(result.affectedRows === 0) {
             return res.status(404).json({ error: "Project not found" });
         }
-        console.log('✅ Project deleted successfully');
         res.json({ message: "Project deleted successfully" });
-    });
-});
-
-// GET messages
-app.get('/api/admin/messages', (req, res) => {
-    db.query("SELECT * FROM messages ORDER BY id DESC", (err, results) => {
-        if(err) {
-            console.error('Error fetching messages:', err);
-            return res.status(500).json({ error: err.message });
-        }
-        res.json(results);
     });
 });
 
 const PORT = 3001;
 app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`🔑 Admin login: dagi / Dagi123`);
+    console.log(`🔑 Default admin: dagi / Dagi123`);
 });
