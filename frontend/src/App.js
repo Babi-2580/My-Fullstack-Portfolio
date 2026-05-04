@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
-const API_URL = 'http://localhost:3001/api';
+const API_URL = 'http://localhost:8000/api';
 
 function App() {
   const [currentPage, setCurrentPage] = useState('home');
@@ -23,7 +23,7 @@ function App() {
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
   
-  // Admin UI state - NEW!
+  // Admin UI state
   const [adminSection, setAdminSection] = useState("dashboard");
   const [showPassword, setShowPassword] = useState(false);
   
@@ -54,18 +54,18 @@ function App() {
 
   // Check for saved admin session on load
   useEffect(() => {
-  fetchProjects();
-  fetchProfileSettings();
+    fetchProjects();
+    fetchProfileSettings();
 
-  // Force admin to login every time the app starts
-  localStorage.removeItem("isAdmin");
-  localStorage.removeItem("adminData");
+    // Force admin to login every time the app starts
+    localStorage.removeItem("isAdmin");
+    localStorage.removeItem("adminData");
 
-  setIsAdmin(false);
-  setAdminData(null);
-}, []);
+    setIsAdmin(false);
+    setAdminData(null);
+  }, []);
     
-     const fetchProjects = async () => {
+  const fetchProjects = async () => {
     setLoading(true);
     try {
       const response = await axios.get(`${API_URL}/projects`);
@@ -113,7 +113,7 @@ function App() {
         setLoginForm({ username: '', password: '' });
         await fetchMessages();
         await fetchProfileSettings();
-        setAdminSection('dashboard'); // Reset to dashboard on login
+        setAdminSection('dashboard');
       }
     } catch (error) {
       setLoginError('Invalid credentials');
@@ -264,7 +264,7 @@ function App() {
   const handleDeleteProject = async (id) => {
     if (window.confirm('Are you sure you want to delete this project?')) {
       try {
-        await axios.delete(`${API_URL}/admin/projects/${id}`);
+        await axios.delete(`${API_URL}/admin/projects/${id}/delete`);
         alert('Project deleted successfully!');
         await fetchProjects();
       } catch (error) {
@@ -302,7 +302,7 @@ function App() {
     phone: '📱'
   };
 
-  // STYLES - Including new admin styles
+  // STYLES
   const styles = {
     container: {
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
@@ -650,7 +650,6 @@ function App() {
       boxShadow: '0 0 10px rgba(59, 130, 246, 0.3)',
       whiteSpace: 'nowrap'
     },
-    // ========== NEW ADMIN STYLES ==========
     adminContainer: {
       display: "flex",
       minHeight: "80vh",
@@ -1093,8 +1092,7 @@ function App() {
     </div>
   );
 
-  // ========== ADMIN SECTION RENDERERS ==========
-  
+  // ADMIN SECTION RENDERERS
   const renderDashboard = () => (
     <div style={styles.card}>
       <h2 style={styles.cardTitle}>Dashboard Overview</h2>
@@ -1334,7 +1332,7 @@ function App() {
     </div>
   );
 
-  // Admin page - NEW BEAUTIFUL DESIGN
+  // Admin page
   const renderAdmin = () => {
     if (!isAdmin) {
       return (
@@ -1384,7 +1382,6 @@ function App() {
 
     return (
       <div style={styles.adminContainer}>
-        {/* Sidebar */}
         <div style={styles.adminSidebar}>
           <h3 style={{marginBottom: "20px", color: "white"}}>Admin Panel</h3>
 
@@ -1439,7 +1436,6 @@ function App() {
           </button>
         </div>
 
-        {/* Content */}
         <div style={styles.adminContent}>
           {adminSection === "dashboard" && renderDashboard()}
           {adminSection === "addProject" && renderAddProject()}
