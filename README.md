@@ -164,3 +164,11 @@ If you like this project, please give it a star! ⭐
 
 https://img.shields.io/github/stars/Babi-2580/my-portfolio?style=for-the-badge
 
+to run the project 
+cd C:\Users\Dagem\my-portfolio
+venv\Scripts\activate
+python manage.py runserver
+
+cd C:\Users\Dagem\my-portfolio
+venv\Scripts\activate
+python manage.py runserver
